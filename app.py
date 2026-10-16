@@ -10,13 +10,9 @@ st.set_page_config(page_title="dbSNP2CAPS Tasarlayıcı", layout="wide", initial
 # --- Premium Dark Mode ve Siberpunk CSS ---
 st.markdown("""
     <style>
-    /* Arka planı logoya uygun koyu lacivert/siyah yap */
     .stApp {background-color: #030712;}
-    
-    /* Temel metinler tam beyaz */
     h1, h2, h3, p, label {color: #ffffff !important;}
     
-    /* 🧬 Dizi Giriş Kutusu - Biyoinformatik Terminal Havası */
     .stTextArea textarea {
         background-color: #020617 !important;
         color: #00ffcc !important; 
@@ -30,7 +26,6 @@ st.markdown("""
         box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
     }
 
-    /* Havalı Buton Tasarımı */
     .stButton>button {
         background-color: transparent;
         color: #10b981 !important;
@@ -48,7 +43,6 @@ st.markdown("""
         border: 2px solid #10b981;
     }
     
-    /* Geliştirici Künyesi */
     .credit-text {
         font-size: 1.2rem;
         color: #00e5ff !important;
@@ -69,7 +63,7 @@ with col_logo:
     st.image(logo_url, use_container_width=True)
 
 with col_title:
-    st.markdown("<h1>🧬 dbSNP2CAPS | Otomatik CAPS Markör Tasarlayıcı v2.0</h1>", unsafe_allow_html=True)
+    st.markdown("<h1>🧬 dbSNP2CAPS | Otomatik CAPS Markör Tasarlayıcı v2.5</h1>", unsafe_allow_html=True)
     st.markdown("### **Genom Okulu** | NCBI Entegreli Biyoinformatik ve Moleküler Islah Platformu")
     st.markdown("<div class='credit-text'>Sistem Mimarı ve Baş Geliştirici: Doç. Dr. İbrahim Çelik</div>", unsafe_allow_html=True)
 
@@ -94,7 +88,7 @@ def get_fragments(seq, enz_motif):
     frags = [cuts[i] - cuts[i-1] for i in range(1, len(cuts))]
     return sorted(frags, reverse=True)
 
-# --- NCBI API Fonksiyonları ---
+# --- NCBI API Fonksiyonları (GÜNCELLENDİ: Künye Bilgileri Eklendi) ---
 def search_gene_snps(gene_name):
     try:
         url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=snp&term={gene_name}[Gene]+AND+human[Organism]&retmode=json&retmax=50"
@@ -116,18 +110,30 @@ def fetch_snp_details(rs_id):
             docsum = snp_data.get('docsum', '')
             alleles = docsum.split('SEQ=[')[1].split(']')[0] if 'SEQ=[' in docsum else "N/N"
             
-            # API'den gelen dizi simülasyonu (Flanking sequence)
+            # --- YENİ: Künye Bilgilerini Ayıklama ---
+            details = {
+                "Varyant_Tipi": str(snp_data.get('snp_class', 'Bilinmiyor')).upper(),
+                "Klinik_Onem": str(snp_data.get('clinical_significance', 'Bilinmiyor')),
+                "Fonksiyonel_Etki": str(snp_data.get('fxn_class', 'Bilinmiyor')).replace("_", " ").title(),
+                "Kromozom": str(snp_data.get('chr', 'Bilinmiyor')),
+                "MAF": str(snp_data.get('global_maf', 'Bilinmiyor')),
+                "Aleller": alleles
+            }
+            
+            if 'HGVS=' in docsum:
+                hgvs_part = docsum.split('HGVS=')[1].split('|')[0]
+                details["HGVS"] = ", ".join(hgvs_part.split(',')[:2])
+            else:
+                details["HGVS"] = "Bilinmiyor"
+            
+            # API'den gelen dizi simülasyonu
             simulated_left = "ATCGTCAAGCTAGCCTAGCATCCGATTACGCATGCTTACGGATCGACTACTACGATCGA"
             simulated_right = "CGCTAGCTATTACGGATCGACTACTACGATCGAATCGAGCCTAGCATCCGATTACGC"
             
-            return f"{simulated_left}[{alleles}]{simulated_right}", None
-        return None, "SNP bulunamadı."
+            return f"{simulated_left}[{alleles}]{simulated_right}", details, None
+        return None, None, "SNP bulunamadı."
     except Exception as e:
-        return None, str(e)
-
-# --- Varsayılan Dizi State Yönetimi ---
-if 'target_seq' not in st.session_state:
-    st.session_state['target_seq'] = "ATCGTCAAGCTAGCCTAGCATCCGATTACGCATGCTTACGGATCGACTACTACGATCGAATCGAGCCTAGCATCCGATTACGCATGCTTACGGATCGACTACTACGATCGAATCGAGCCTAGCATCCGATTACGCATGCTCGATCGTG[A/G]ATTCGCTAGCTATTACGGATCGACTACTACGATCGAATCGAGCCTAGCATCCGATTACGCATGCTTACGGATCGACTACTACGATCGAATCGAGCCTAG"
+        return None, None, str(e)
 
 # --- 1. Veritabanı ve Veri Çekme Arayüzü ---
 st.markdown("### 🌐 1. NCBI Veritabanından Dizi Çek veya Manuel Gir")
@@ -153,9 +159,11 @@ with tab1:
         selected_rs = st.selectbox("Bir SNP Seçin:", st.session_state['rs_list'])
         if st.button("Seçili SNP Dizisini Kutuya Aktar"):
             with st.spinner("Veri çekiliyor..."):
-                seq, err = fetch_snp_details(selected_rs)
+                seq, details, err = fetch_snp_details(selected_rs)
                 if not err:
                     st.session_state['target_seq'] = seq
+                    st.session_state['snp_details'] = details
+                    st.session_state['active_rs'] = selected_rs
                     st.rerun()
 
 with tab2:
@@ -166,49 +174,78 @@ with tab2:
         st.write("") ; st.write("")
         if st.button("Diziyi Çek ve Kutuya Aktar"):
             with st.spinner("Veri çekiliyor..."):
-                seq, err = fetch_snp_details(rs_input)
+                seq, details, err = fetch_snp_details(rs_input)
                 if not err:
                     st.session_state['target_seq'] = seq
+                    st.session_state['snp_details'] = details
+                    st.session_state['active_rs'] = rs_input
                     st.rerun()
                 else:
                     st.error(err)
 
 with tab3:
-    st.info("Aşağıdaki metin kutusuna doğrudan kendi dizinizi yapıştırabilirsiniz.")
+    st.info("Aşağıdaki metin kutusuna doğrudan kendi dizinizi yapıştırabilirsiniz. (Otomatik künye gelmez)")
+
+# --- YENİ: ŞIK SNP KÜNYE KARTI ---
+if 'snp_details' in st.session_state and 'active_rs' in st.session_state:
+    dets = st.session_state['snp_details']
+    rs_isim = st.session_state['active_rs']
+    
+    st.markdown(f"### 📋 {rs_isim} Resmi Künye Bilgileri")
+    
+    # 3'lü Dinamik Metrik Kartları
+    c1, c2, c3 = st.columns(3)
+    c1.metric("🧬 Varyant Tipi", dets.get("Varyant_Tipi", "-"))
+    c2.metric("🏥 Klinik Önem", dets.get("Klinik_Onem", "-"))
+    c3.metric("⚙️ Fonksiyonel Etki", dets.get("Fonksiyonel_Etki", "-"))
+    
+    # Terminal Tipi Şık Kutu
+    st.markdown(f"""
+    <div style="background-color: #0f172a; padding: 15px; border-radius: 8px; border: 1px solid #1e293b; color: #cbd5e1; font-family: 'Courier New', monospace; font-size: 15px; margin-bottom: 20px;">
+        <span style="color: #00ffcc;"><b>➤ Alleles:</b></span> {dets.get('Aleller', '-')}<br>
+        <span style="color: #00ffcc;"><b>➤ Chromosome:</b></span> {dets.get('Kromozom', '-')}<br>
+        <span style="color: #00ffcc;"><b>➤ Global MAF:</b></span> {dets.get('MAF', '-')}<br>
+        <span style="color: #00ffcc;"><b>➤ HGVS:</b></span> {dets.get('HGVS', '-')}
+    </div>
+    """, unsafe_allow_html=True)
 
 # --- Dizi Kutusu ve Algoritma Tetikleyici ---
 st.markdown("### 🎯 Hedef Genomik Dizi")
-seq_input = st.text_area("İşlenecek Dizi (Parantezli SNP Formatı: Örn. [A/G])", value=st.session_state['target_seq'], height=120)
+target_val = st.session_state.get('target_seq', '')
+seq_input = st.text_area("İşlenecek Dizi (Parantezli SNP Formatı: Örn. [A/G])", value=target_val, height=120)
 
 if st.button("🚀 Algoritmayı Çalıştır ve Enzimleri Tara", use_container_width=True):
-    clean_seq = seq_input.replace("\n", "").replace(" ", "").upper()
-    match = re.search(r'(.*)\[(.)/(.)\](.*)', clean_seq)
-    
-    if not match:
-        st.error("Sözdizimi Hatası: Lütfen [A/G] formatında bir SNP noktası içeren geçerli bir dizi girin.")
+    if not seq_input:
+        st.warning("Lütfen önce bir dizi girin veya yukarıdan veritabanı araması yapın.")
     else:
-        prefix, a1, a2, suffix = match.groups()
-        alel1_seq = prefix + a1 + suffix
-        alel2_seq = prefix + a2 + suffix
-        total_len = len(alel1_seq)
+        clean_seq = seq_input.replace("\n", "").replace(" ", "").upper()
+        match = re.search(r'(.*)\[(.)/(.)\](.*)', clean_seq)
         
-        caps_enzymes = {}
-        
-        for e_name, e_motif in ENZYMES.items():
-            frags1 = get_fragments(alel1_seq, e_motif)
-            frags2 = get_fragments(alel2_seq, e_motif)
-            
-            if frags1 != frags2:
-                caps_enzymes[e_name] = {"Alel1": frags1, "Alel2": frags2}
-        
-        if not caps_enzymes:
-            st.warning("Bu SNP noktası için kütüphanede ayırt edici bir polimorfik enzim profili bulunamadı.")
-            st.session_state['caps_results'] = None
+        if not match:
+            st.error("Sözdizimi Hatası: Lütfen [A/G] formatında bir SNP noktası içeren geçerli bir dizi girin.")
         else:
-            st.session_state['caps_results'] = caps_enzymes
-            st.session_state['total_len'] = total_len
-            st.session_state['alleles'] = (a1, a2)
-            st.success(f"Sistem Taraması Tamamlandı: {len(caps_enzymes)} adet uygun CAPS enzimi izole edildi.")
+            prefix, a1, a2, suffix = match.groups()
+            alel1_seq = prefix + a1 + suffix
+            alel2_seq = prefix + a2 + suffix
+            total_len = len(alel1_seq)
+            
+            caps_enzymes = {}
+            
+            for e_name, e_motif in ENZYMES.items():
+                frags1 = get_fragments(alel1_seq, e_motif)
+                frags2 = get_fragments(alel2_seq, e_motif)
+                
+                if frags1 != frags2:
+                    caps_enzymes[e_name] = {"Alel1": frags1, "Alel2": frags2}
+            
+            if not caps_enzymes:
+                st.warning("Bu SNP noktası için kütüphanede ayırt edici bir polimorfik enzim profili bulunamadı.")
+                st.session_state['caps_results'] = None
+            else:
+                st.session_state['caps_results'] = caps_enzymes
+                st.session_state['total_len'] = total_len
+                st.session_state['alleles'] = (a1, a2)
+                st.success(f"Sistem Taraması Tamamlandı: {len(caps_enzymes)} adet uygun CAPS enzimi izole edildi.")
 
 st.divider()
 
