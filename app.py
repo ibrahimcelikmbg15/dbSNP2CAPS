@@ -249,4 +249,28 @@ if 'caps_results' in st.session_state and st.session_state['caps_results']:
         
         well_y = max_bp + 50
         for i in range(1, len(lanes) + 1):
-            well = patches.Rectangle((i - 0.25, well_y), 0.5, max_bp * 0.05, fill=False, edgecolor='#334155', lw
+            well = patches.Rectangle((i - 0.25, well_y), 0.5, max_bp * 0.05, fill=False, edgecolor='#334155', lw=2)
+            ax.add_patch(well)
+            ax.text(i, well_y + (max_bp * 0.06), "KUYU", color='#94a3b8', ha='center', fontsize=9, fontweight='bold')
+            
+        for i, (lane_name, bands) in enumerate(lanes.items()):
+            x = i + 1
+            for band in bands:
+                alpha_core = 0.9 if lane_name != "DNA\nMarker" else 0.5
+                neon_color = '#10b981' 
+                ax.hlines(band, x - 0.25, x + 0.25, colors=neon_color, linewidth=18, alpha=alpha_core * 0.25)
+                ax.hlines(band, x - 0.2, x + 0.2, colors='#ffffff', linewidth=4, alpha=alpha_core) 
+                if lane_name == "DNA\nMarker":
+                    ax.text(x - 0.35, band, f"{band}", color='#cbd5e1', va='center', ha='right', fontsize=10)
+
+        ax.set_xticks(list(range(1, len(lanes) + 1)))
+        ax.set_xticklabels(lanes.keys(), color='#ffffff', fontsize=11, fontweight='bold')
+        
+        ax.set_ylim(0, max_bp + (max_bp * 0.15))
+        
+        ax.tick_params(colors='#ffffff', axis='y', labelsize=10)
+        for spine in ax.spines.values():
+            spine.set_color('#1e293b')
+        ax.set_ylabel("DNA Büyüklüğü (bp)", color='#ffffff', fontsize=12, fontweight='bold')
+        
+        st.pyplot(fig)
